@@ -1,5 +1,5 @@
-// 임시 통합 테스트 스크립트. 브라우저 로그인 없이 Orchestrator 전체 흐름을 검증한다.
-// 실행: node --env-file=.env.local -r tsx/cjs scripts/test-orchestrator.ts (또는 npm run test:orchestrator)
+// 임시 통합 테스트 스크립트. 브라우저 로그인 없이 새 Agent Runtime 전체 흐름을 검증한다.
+// 실행: node --env-file=.env.local -r tsx/cjs scripts/test-orchestrator.ts
 import { db } from "../src/lib/db";
 import { runOrchestrator } from "../src/lib/orchestrator";
 
@@ -12,51 +12,50 @@ async function main() {
     create: { email, name: "Test User" },
   });
 
-  const conversation = await db.conversation.create({
-    data: { userId: user.id, title: "TEST 1: 브랜드 포지셔닝" },
+  console.log("=== TEST A: 단일 팀 라우팅 (CS 예상) — LLM 기반 Orchestrator ===");
+  const convA = await db.conversation.create({
+    data: { userId: user.id, title: "TEST A: 혜택 지급시점 문의" },
   });
-
-  console.log("=== TEST 1: 브랜드 포지셔닝 (Strategy 단독 예상) ===");
-  const result = await runOrchestrator({
+  const resultA = await runOrchestrator({
     userId: user.id,
-    conversationId: conversation.id,
-    userRequest: "소문다이렉트의 브랜드 포지셔닝을 검토해줘.",
+    conversationId: convA.id,
+    userRequest: "고객들이 혜택 지급시점을 자꾸 물어봐요. 어떻게 안내해야 할까요?",
   });
+  console.log("agentsInvolved:", resultA.agentsInvolved);
+  console.log("error:", resultA.error);
+  console.log("finalConclusion (앞 400자):\n", resultA.finalConclusion.slice(0, 400));
 
-  console.log("agentsInvolved:", result.agentsInvolved);
-  console.log("error:", result.error);
-  console.log("finalConclusion (앞 500자):");
-  console.log(result.finalConclusion.slice(0, 500));
-  console.log("driveFileId 확인은 Task 레코드에서 별도 조회 필요");
-
-  const task = await db.task.findUnique({ where: { id: result.taskId } });
-  console.log("task.driveFileId:", task?.driveFileId);
-  console.log("task.status:", task?.status);
-
-  console.log("\n=== TEST 2: 다중 팀 교차검토 (Strategy + Growth 예상) ===");
-  const conversation2 = await db.conversation.create({
-    data: { userId: user.id, title: "TEST 2: 친구추천 마케팅+전략" },
+  console.log("\n=== TEST B: 다중 팀 교차검토 (Strategy + Product, Anthropic tool loop 검증) ===");
+  const convB = await db.conversation.create({
+    data: { userId: user.id, title: "TEST B: 계약관리 서비스 구현" },
   });
-  const result2 = await runOrchestrator({
+  const resultB = await runOrchestrator({
     userId: user.id,
-    conversationId: conversation2.id,
-    userRequest: "친구추천 서비스를 마케팅 관점과 전략 관점에서 같이 검토해줘.",
+    conversationId: convB.id,
+    userRequest:
+      "고객이 본인 계약을 한눈에 점검할 수 있는 계약관리 서비스를 사이트에 만들려고 해. 사업적 타당성과 구현 난이도를 함께 검토해줘.",
   });
-  console.log("agentsInvolved:", result2.agentsInvolved);
-  console.log("error:", result2.error);
-  console.log("opinions keys:", Object.keys(result2.opinions));
-  console.log("finalConclusion (앞 400자):");
-  console.log(result2.finalConclusion.slice(0, 400));
+  console.log("agentsInvolved:", resultB.agentsInvolved);
+  console.log("error:", resultB.error);
+  console.log("opinions keys:", Object.keys(resultB.opinions));
+  console.log("finalConclusion (앞 500자):\n", resultB.finalConclusion.slice(0, 500));
 
+  const taskIds = [resultA.taskId, resultB.taskId];
   const runs = await db.agentRun.findMany({
-    where: { taskId: { in: [result.taskId, result2.taskId] } },
+    where: { taskId: { in: taskIds } },
     orderBy: { createdAt: "asc" },
   });
-  console.log("\n=== AgentRun 로그 (비용 기록 확인) ===");
+  console.log("\n=== AgentRun 로그 (Cost Control 필드 확인) ===");
   for (const r of runs) {
     console.log(
-      `${r.agent} | ${r.model} | ${r.status} | in=${r.inputTokens} out=${r.outputTokens} | $${r.estimatedCostUsd?.toFixed(5)}`
+      `${r.agent} | ${r.provider} | ${r.model} | ${r.status} | steps=${r.steps} | in=${r.inputTokens} out=${r.outputTokens} | $${r.estimatedCostUsd?.toFixed(5)} | ${r.latencyMs}ms`
     );
+  }
+
+  const handoffs = await db.handoff.findMany({ where: { taskId: { in: taskIds } } });
+  console.log("\n=== 생성된 Handoff 수:", handoffs.length, "===");
+  for (const h of handoffs) {
+    console.log(JSON.stringify(h.content, null, 2).slice(0, 500));
   }
 
   await db.$disconnect();

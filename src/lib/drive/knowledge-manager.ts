@@ -1,5 +1,13 @@
 import { getDriveClient, isDriveConfigured } from "./client";
-import type { DriveContextDoc } from "@/lib/agents/types";
+import { db } from "@/lib/db";
+import type { Handoff } from "@/lib/agent-runtime/schemas";
+
+export interface DriveContextDoc {
+  id: string;
+  name: string;
+  path: string; // 예: 01_STRATEGY/친구추천_전략.md
+  content: string; // 관련 발췌 (전체 Drive를 넣지 않는다)
+}
 
 const ROOT_FOLDER_ID = () => process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID as string;
 
@@ -92,30 +100,28 @@ export async function getMasterSummary(): Promise<string> {
   return content.slice(0, 4000);
 }
 
-// 업무 주제와 관련된 자료를 Drive에서 검색해 상위 N개만 Context로 반환한다 (섹션 11).
-// Drive 전체를 프롬프트에 넣지 않고, 이름/내용 키워드 매칭으로 관련도 높은 것만 고른다.
-export async function searchRelevantDocs(
-  userRequest: string,
-  limit = 5
+function extractKeywords(text: string): string[] {
+  return text
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter((w) => w.length >= 2);
+}
+
+async function searchInFolders(
+  query: string,
+  folderNames: string[],
+  limit: number
 ): Promise<DriveContextDoc[]> {
   const drive = requireDriveOrNull();
   if (!drive) return [];
 
-  const keywords = userRequest
-    .split(/\s+/)
-    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter((w) => w.length >= 2);
-
+  const keywords = extractKeywords(query);
   if (keywords.length === 0) return [];
 
-  // 하위 폴더 목록 조회 (없는 폴더는 조용히 건너뜀)
   const rootChildren = await listChildren(drive, ROOT_FOLDER_ID());
-  const targetFolders = rootChildren.filter((f) =>
-    KNOWN_SUBFOLDERS.includes(f.name)
-  );
+  const targetFolders = rootChildren.filter((f) => folderNames.includes(f.name));
 
-  const candidates: { file: DriveFile; folderName: string; score: number }[] =
-    [];
+  const candidates: { file: DriveFile; folderName: string; score: number }[] = [];
 
   for (const folder of targetFolders) {
     const files = await listChildren(drive, folder.id);
@@ -130,7 +136,6 @@ export async function searchRelevantDocs(
     }
   }
 
-  // 이름에 키워드가 없어도 최신 자료 몇 개는 후보로 남겨 완전히 0건이 되지 않게 한다.
   candidates.sort((a, b) => b.score - a.score);
   const top = candidates.slice(0, limit);
 
@@ -146,6 +151,86 @@ export async function searchRelevantDocs(
     });
   }
   return docs;
+}
+
+// 업무 주제와 관련된 자료를 Drive에서 검색해 상위 N개만 Context로 반환한다 (섹션 11).
+// Drive 전체를 프롬프트에 넣지 않고, 이름/내용 키워드 매칭으로 관련도 높은 것만 고른다.
+export async function searchRelevantDocs(
+  userRequest: string,
+  limit = 5
+): Promise<DriveContextDoc[]> {
+  return searchInFolders(userRequest, KNOWN_SUBFOLDERS, limit);
+}
+
+// CS/VOC 자료만 좁혀서 검색 (CS Agent 전용 tool).
+export async function searchVoc(query: string, limit = 5): Promise<DriveContextDoc[]> {
+  return searchInFolders(query, ["06_CS"], limit);
+}
+
+// 특정 문서 ID의 전체 내용을 읽는다 (search 결과 중 하나를 더 깊이 볼 때 사용).
+export async function readDocument(fileId: string): Promise<DriveContextDoc | null> {
+  const drive = requireDriveOrNull();
+  if (!drive) return null;
+  try {
+    const meta = await drive.files.get({ fileId, fields: "id, name, mimeType" });
+    const file = meta.data as DriveFile;
+    const content = await readFileText(drive, file);
+    return { id: file.id, name: file.name, path: file.name, content: content.slice(0, 6000) };
+  } catch {
+    return null;
+  }
+}
+
+// 과거 유사 업무를 DB에서 검색한다 (섹션 12, 29: 대화/업무 상태는 DB가 원본).
+export async function searchPreviousWork(
+  userId: string,
+  query: string,
+  limit = 3
+): Promise<{ taskId: string; title: string; finalConclusion: string; decidedAt: string }[]> {
+  const keywords = extractKeywords(query).slice(0, 5);
+  if (keywords.length === 0) return [];
+
+  const tasks = await db.task.findMany({
+    where: {
+      conversation: { userId },
+      OR: keywords.map((kw) => ({ title: { contains: kw } })),
+    },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+    include: { versions: { orderBy: { version: "desc" }, take: 1 } },
+  });
+
+  return tasks
+    .filter((t) => t.versions[0]?.finalConclusion)
+    .map((t) => ({
+      taskId: t.id,
+      title: t.title,
+      finalConclusion: t.versions[0].finalConclusion as string,
+      decidedAt: t.updatedAt.toISOString(),
+    }));
+}
+
+// Handoff 객체를 DB(추적용)와 Drive(07_AI_WORK/04_HANDOFF, 열람용) 양쪽에 저장한다 (섹션 26).
+export async function saveHandoff(taskId: string, handoff: Handoff): Promise<void> {
+  await db.handoff.create({
+    data: { taskId, type: handoff.to_agent, content: handoff as object },
+  });
+
+  const drive = requireDriveOrNull();
+  if (!drive) return;
+  try {
+    const folderId = await ensureAiWorkSubfolder(drive, AI_WORK_SUBFOLDERS.HANDOFF);
+    await drive.files.create({
+      requestBody: {
+        name: `Handoff_${handoff.from_agent}-to-${handoff.to_agent}_${taskId}`,
+        parents: [folderId],
+        mimeType: "application/vnd.google-apps.document",
+      },
+      media: { mimeType: "text/plain", body: JSON.stringify(handoff, null, 2) },
+    });
+  } catch {
+    // Drive 저장 실패는 치명적이지 않다 — DB에는 이미 기록됨.
+  }
 }
 
 async function findOrCreateFolder(

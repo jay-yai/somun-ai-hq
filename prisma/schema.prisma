@@ -97,17 +97,22 @@ model TaskVersion {
   @@index([taskId])
 }
 
-// 팀(Agent)별 실행 기록 + 비용 추적
+// 팀(Agent)별 실행 기록 + 비용 추적. 하나의 Agent 실행은 여러 tool-call step으로
+// 구성될 수 있으므로(Max Steps), 토큰/비용/지연시간은 전체 step 합계다.
 model AgentRun {
   id               String   @id @default(cuid())
   taskId           String
   task             Task     @relation(fields: [taskId], references: [id])
-  agent            String // strategy | product | growth | cs
+  agent            String // orchestrator | strategy | product | growth | cs
+  provider         String? // openai | anthropic | gemini
   model            String // 실제 호출한 모델명 (env/Settings에서 관리)
-  status           String // success | failed
+  status           String // success | failed | budget_exceeded | max_steps_exceeded
+  steps            Int? // 이번 실행에 사용한 tool-call step 수
   inputTokens      Int?
   outputTokens     Int?
   estimatedCostUsd Float?
+  latencyMs        Int? // 전체 step 지연시간 합계
+  stepsLog         Json? // step별 상세 로그 (tool 호출 추적용)
   errorMessage     String?  @db.Text
   createdAt        DateTime @default(now())
 
