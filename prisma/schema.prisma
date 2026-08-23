@@ -7,8 +7,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // 앱 런타임: Supabase Transaction Pooler (서버리스에 적합, 커넥션 절약)
+  url       = env("DATABASE_URL")
+  // 스키마 마이그레이션 전용: Supabase Session Pooler (DDL/마이그레이션에 적합)
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
