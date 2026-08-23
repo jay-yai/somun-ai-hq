@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const AGENT_LABELS: Record<string, string> = {
+export const AGENT_LABELS: Record<string, string> = {
   strategy: "Strategy",
   product: "Product",
   growth: "Growth",

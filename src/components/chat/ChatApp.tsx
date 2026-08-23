@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { TaskResultCard, type TaskResultData } from "./TaskResultCard";
 
 interface ConversationSummary {
@@ -242,6 +243,12 @@ export function ChatApp({ userName }: { userName: string }) {
             <div className="text-sm font-semibold text-gray-900">SOMUN AI HQ</div>
             <div className="text-xs text-gray-400">{userName}</div>
           </div>
+          <Link
+            href="/settings"
+            className="ml-auto rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
+          >
+            비용 확인
+          </Link>
         </header>
 
         <main className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
