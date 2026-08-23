@@ -69,6 +69,8 @@ export function ChatApp({ userName }: { userName: string }) {
   }
 
   useEffect(() => {
+    // 최초 마운트 시 대화 목록을 서버에서 가져온다 (외부 시스템과의 동기화).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadConversations();
   }, []);
 
