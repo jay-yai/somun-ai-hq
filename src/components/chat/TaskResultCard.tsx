@@ -1,13 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-export const AGENT_LABELS: Record<string, string> = {
-  strategy: "Strategy",
-  product: "Product",
-  growth: "Growth",
-  cs: "CS",
-};
+import { AgentAvatar, AGENT_LABELS_KO } from "./AgentAvatar";
 
 export interface TaskResultData {
   taskId: string;
@@ -53,11 +47,20 @@ export function TaskResultCard({
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-        <span className="font-medium text-[#1496F4]">참여</span>
-        <span>
-          {data.agentsInvolved.map((a) => AGENT_LABELS[a] ?? a).join(" · ")}
-        </span>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {data.agentsInvolved.map((a) => (
+            <span
+              key={a}
+              className="flex items-center gap-1.5 rounded-full border border-gray-100 bg-gray-50 py-1 pl-1 pr-2.5"
+            >
+              <AgentAvatar agent={a} size={20} />
+              <span className="text-xs font-medium text-gray-700">
+                {AGENT_LABELS_KO[a] ?? a}
+              </span>
+            </span>
+          ))}
+        </div>
         {status && (
           <span className="ml-auto rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
             {status}
@@ -81,8 +84,11 @@ export function TaskResultCard({
             <div className="mt-2 space-y-3 rounded-lg bg-gray-50 p-3">
               {Object.entries(data.opinions).map(([agent, text]) => (
                 <div key={agent}>
-                  <div className="mb-1 text-xs font-semibold text-gray-700">
-                    {AGENT_LABELS[agent] ?? agent} 의견
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <AgentAvatar agent={agent} size={18} />
+                    <span className="text-xs font-semibold text-gray-700">
+                      {AGENT_LABELS_KO[agent] ?? agent} 의견
+                    </span>
                   </div>
                   <div className="whitespace-pre-wrap text-xs text-gray-600">
                     {text}

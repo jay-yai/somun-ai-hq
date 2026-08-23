@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TaskResultCard, type TaskResultData } from "./TaskResultCard";
+import { AgentAvatar } from "./AgentAvatar";
 
 interface ConversationSummary {
   id: string;
@@ -253,9 +254,22 @@ export function ChatApp({ userName }: { userName: string }) {
 
         <main className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
           {messages.length === 0 && (
-            <div className="mx-auto max-w-md pt-16 text-center text-sm text-gray-400">
-              업무를 지시해보세요. 예) &quot;소문다이렉트의 온라인 신규고객 유입전략을
-              검토해줘.&quot;
+            <div className="mx-auto max-w-md pt-16 text-center">
+              <div className="mb-4 flex items-center justify-center -space-x-2">
+                {(["strategy", "product", "growth", "cs"] as const).map((a) => (
+                  <span
+                    key={a}
+                    className="rounded-full ring-2 ring-white"
+                  >
+                    <AgentAvatar agent={a} size={40} />
+                  </span>
+                ))}
+              </div>
+              <p className="text-sm text-gray-500">
+                전략기획팀, 개발팀, 마케팅팀, CS팀이 업무에 참여중입니다.
+                <br />
+                지시를 내려 주세요.
+              </p>
             </div>
           )}
           {messages.map((m) => {

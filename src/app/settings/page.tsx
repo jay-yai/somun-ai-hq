@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 import { getUsageSummary } from "@/lib/usage";
-import { AGENT_LABELS } from "@/components/chat/TaskResultCard";
+import { AgentAvatar, AGENT_LABELS_KO } from "@/components/chat/AgentAvatar";
 
 function fmtCost(n: number): string {
   return `$${n.toFixed(n < 0.01 ? 5 : 4)}`;
@@ -79,8 +79,11 @@ export default async function SettingsPage() {
                 )}
                 {usage.byAgent.map((row) => (
                   <tr key={row.agent} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-gray-800">
-                      {AGENT_LABELS[row.agent] ?? row.agent}
+                    <td className="px-4 py-2.5">
+                      <span className="flex items-center gap-2 font-medium text-gray-800">
+                        <AgentAvatar agent={row.agent} size={20} />
+                        {AGENT_LABELS_KO[row.agent] ?? row.agent}
+                      </span>
                     </td>
                     <td className="px-4 py-2.5 text-gray-600">{row.calls}</td>
                     <td className="px-4 py-2.5 text-gray-600">
@@ -131,8 +134,11 @@ export default async function SettingsPage() {
                     <td className="max-w-[160px] truncate px-4 py-2.5 text-gray-700">
                       {r.taskTitle}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-700">
-                      {AGENT_LABELS[r.agent] ?? r.agent}
+                    <td className="px-4 py-2.5">
+                      <span className="flex items-center gap-1.5 text-gray-700">
+                        <AgentAvatar agent={r.agent} size={18} />
+                        {AGENT_LABELS_KO[r.agent] ?? r.agent}
+                      </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-gray-500">
                       {r.model}
