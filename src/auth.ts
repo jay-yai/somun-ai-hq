@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { db } from "@/lib/db";
+import { authConfig } from "./auth.config";
 
 // 허용된 이메일만 로그인할 수 있도록 화이트리스트로 제한한다.
 // (SOMUN AI HQ는 내부 전용 서비스이며, 공개 가입을 허용하지 않는다.)
@@ -11,7 +12,11 @@ function getAllowedEmails(): string[] {
     .filter(Boolean);
 }
 
+// 이 파일은 Node.js 런타임(API 라우트, 서버 컴포넌트)에서만 import한다.
+// Prisma(DB) 호출이 포함된 완전한 설정이며, Edge 런타임인 proxy.ts에서는
+// 대신 src/auth.config.ts의 경량 설정을 사용한다.
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   providers: [Google],
   callbacks: {
     async signIn({ user }) {

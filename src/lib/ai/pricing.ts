@@ -19,8 +19,8 @@ const PRICING: Record<string, PriceRow> = {
   "gpt-5-mini": { inputPer1M: 0.5, outputPer1M: 2.0 },
 
   // --- Google Gemini (대략치 — 실제 청구서 확인 후 조정 권장) ---
-  "gemini-2.5-pro": { inputPer1M: 1.25, outputPer1M: 5.0 },
-  "gemini-2.5-flash": { inputPer1M: 0.15, outputPer1M: 0.6 },
+  "gemini-3.1-pro": { inputPer1M: 1.25, outputPer1M: 5.0 },
+  "gemini-3.5-flash": { inputPer1M: 0.15, outputPer1M: 0.6 },
 };
 
 export function estimateCostUsd(
