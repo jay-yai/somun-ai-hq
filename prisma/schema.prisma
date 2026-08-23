@@ -1,0 +1,123 @@
+// SOMUN AI HQ - Database schema
+// DB 역할: 앱 동작 상태(대화, 업무, 버전, 승인, 비용기록)만 관리한다.
+// 회사 공식 문서와 장기지식은 Google Drive가 원본(Source of Truth)이다.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String?
+  image         String?
+  createdAt     DateTime       @default(now())
+  conversations Conversation[]
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  title     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+  tasks     Task[]
+
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  role           String // user | assistant | system
+  content        String       @db.Text
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+// 하나의 "업무"는 사용자가 지시한 업무 단위이며, Google Drive의 07_AI_WORK 문서와 매핑된다.
+model Task {
+  id              String        @id @default(cuid())
+  conversationId  String
+  conversation    Conversation  @relation(fields: [conversationId], references: [id])
+  title           String
+  status          TaskStatus    @default(IDEA)
+  currentVersion  Int           @default(1)
+  masterVersionRef String? // 업무 수행 시 참조한 MASTER 문서의 버전/수정일
+  driveFileId     String? // Google Drive에 저장된 업무 문서 ID
+  driveFolderPath String? // 예: 07_AI_WORK/01_IN_PROGRESS
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  versions        TaskVersion[]
+  agentRuns       AgentRun[]
+  handoffs        Handoff[]
+
+  @@index([conversationId])
+}
+
+enum TaskStatus {
+  IDEA
+  RESEARCH
+  TEST
+  APPROVED
+  BUILD
+  LIVE
+  HOLD
+  DROP
+}
+
+// 업무가 수정될 때마다 새 버전을 추가한다 (기존 결과를 덮어쓰지 않음).
+model TaskVersion {
+  id              String   @id @default(cuid())
+  taskId          String
+  task            Task     @relation(fields: [taskId], references: [id])
+  version         Int
+  userRequest     String   @db.Text
+  strategyOpinion String?  @db.Text
+  productOpinion  String?  @db.Text
+  growthOpinion   String?  @db.Text
+  csOpinion       String?  @db.Text
+  finalConclusion String?  @db.Text
+  userDecision    String? // APPROVED | HOLD | REVISION_REQUESTED
+  userNote        String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  @@index([taskId])
+}
+
+// 팀(Agent)별 실행 기록 + 비용 추적
+model AgentRun {
+  id               String   @id @default(cuid())
+  taskId           String
+  task             Task     @relation(fields: [taskId], references: [id])
+  agent            String // strategy | product | growth | cs
+  model            String // 실제 호출한 모델명 (env/Settings에서 관리)
+  status           String // success | failed
+  inputTokens      Int?
+  outputTokens     Int?
+  estimatedCostUsd Float?
+  errorMessage     String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([taskId])
+}
+
+model Handoff {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id])
+  type      String // product | growth | cs
+  content   Json
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}

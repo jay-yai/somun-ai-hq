@@ -1,0 +1,13 @@
+{
+  "name": "SOMUN AI HQ",
+  "short_name": "SOMUN AI HQ",
+  "description": "소문다이렉트 AI 조직형 업무·전략 협업 채팅",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1496F4",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
