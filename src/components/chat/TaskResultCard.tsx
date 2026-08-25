@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AgentAvatar, AGENT_LABELS_KO } from "./AgentAvatar";
+import { NaverBlogPublish } from "./NaverBlogPublish";
 
 export interface TaskResultData {
   taskId: string;
@@ -97,6 +98,15 @@ export function TaskResultCard({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {data.agentsInvolved.includes("growth") && (
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <NaverBlogPublish
+            taskId={data.taskId}
+            defaultBody={data.opinions.growth ?? data.finalConclusion}
+          />
         </div>
       )}
 
