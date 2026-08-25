@@ -1,4 +1,4 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { resaveTaskWithStatus, runOrchestrator } from "@/lib/orchestrator";
@@ -37,8 +37,6 @@ export async function POST(
   }
 
   if (decision === "APPROVED") {
-    // 중요 정책 변경 여부는 최종결론 텍스트에 "[사용자 승인 필요]" 마커로 표시되도록
-    // Agent 프롬프트에서 유도하고 있다. 여기서는 사용자가 명시적으로 승인한 것으로 처리한다.
     await resaveTaskWithStatus(taskId, "APPROVED");
     return NextResponse.json({ status: "APPROVED" });
   }
@@ -57,54 +55,75 @@ export async function POST(
     }
     await db.task.update({ where: { id: taskId }, data: { status: "RESEARCH" } });
 
-    // 재검토도 수십 초 이상 걸릴 수 있으므로 접수만 빠르게 응답하고
-    // 실제 재실행은 응답 이후 백그라운드에서 계속한다 (/api/chat과 동일한 이유).
-    after(async () => {
-      try {
-        const result = await runOrchestrator({
-          userId: user.id,
-          conversationId: task.conversationId,
-          userRequest: latestVersion?.userRequest ?? task.title,
-          taskId,
-          revisionNote: note,
-        });
+    // 재검토도 수십 초 이상 걸릴 수 있어 /api/chat과 같은 이유로 heartbeat streaming을 쓴다.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(" "));
+          } catch {
+            // ignore
+          }
+        }, 15000);
+        const finish = (payload: unknown) => {
+          clearInterval(heartbeat);
+          controller.enqueue(encoder.encode(JSON.stringify(payload)));
+          controller.close();
+        };
 
-        if (result.error) {
+        try {
+          const result = await runOrchestrator({
+            userId: user.id,
+            conversationId: task.conversationId,
+            userRequest: latestVersion?.userRequest ?? task.title,
+            taskId,
+            revisionNote: note,
+          });
+
+          if (result.error) {
+            await db.message.create({
+              data: { conversationId: task.conversationId, role: "assistant", content: `⚠️ ${result.error}` },
+            });
+            finish(result);
+            return;
+          }
+
           await db.message.create({
             data: {
               conversationId: task.conversationId,
               role: "assistant",
-              content: `⚠️ ${result.error}`,
+              content: JSON.stringify({
+                taskId: result.taskId,
+                agentsInvolved: result.agentsInvolved,
+                opinions: result.opinions,
+                finalConclusion: result.finalConclusion,
+              }),
             },
           });
-          return;
-        }
 
-        await db.message.create({
-          data: {
-            conversationId: task.conversationId,
-            role: "assistant",
-            content: JSON.stringify({
-              taskId: result.taskId,
-              agentsInvolved: result.agentsInvolved,
-              opinions: result.opinions,
-              finalConclusion: result.finalConclusion,
-            }),
-          },
-        });
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        await db.message.create({
-          data: {
-            conversationId: task.conversationId,
-            role: "assistant",
-            content: `⚠️ 업무 처리 중 오류가 발생했습니다: ${errMsg}`,
-          },
-        });
-      }
+          finish(result);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          try {
+            await db.message.create({
+              data: {
+                conversationId: task.conversationId,
+                role: "assistant",
+                content: `⚠️ 업무 처리 중 오류가 발생했습니다: ${errMsg}`,
+              },
+            });
+          } catch {
+            // ignore
+          }
+          finish({ error: errMsg });
+        }
+      },
     });
 
-    return NextResponse.json({ accepted: true, status: "RESEARCH" });
+    return new Response(stream, {
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" },
+    });
   }
 
   return NextResponse.json({ error: "알 수 없는 decision 값입니다." }, { status: 400 });
