@@ -47,6 +47,11 @@ export function ChatApp({ userName }: { userName: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const activeIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   async function loadConversations(q?: string) {
     const res = await fetch(
@@ -87,11 +92,58 @@ export function ChatApp({ userName }: { userName: string }) {
     setSidebarOpen(false);
   }
 
+  function pushLocalMessage(content: string) {
+    setMessages((prev) => [
+      ...prev,
+      { id: `local-${Date.now()}-${Math.random()}`, role: "assistant", content, createdAt: new Date().toISOString() },
+    ]);
+  }
+
+  // Agent 실행은 수십 초~몇 분 걸릴 수 있어 하나의 HTTP 요청으로 붙잡아두지 않는다
+  // (중간 네트워크가 idle 연결로 판단해 끊으면, API 비용은 이미 나갔는데 응답만 못 받는
+  // 상황이 생긴다). 서버는 접수만 빠르게 응답하고, 여기서 완료될 때까지 폴링한다.
+  async function pollUntilNewMessage(
+    conversationId: string,
+    targetCount: number,
+    maxAttempts = 110,
+    intervalMs = 2500
+  ): Promise<boolean> {
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+      try {
+        const res = await fetch(`/api/conversations/${conversationId}`);
+        const data = await res.json();
+        const conv = data.conversation;
+        if (!conv) continue;
+        if (conv.messages.length >= targetCount) {
+          if (activeIdRef.current === conversationId) {
+            setMessages(conv.messages);
+            const statusMap: Record<string, string> = {};
+            for (const t of conv.tasks as TaskSummary[]) statusMap[t.id] = t.status;
+            setTaskStatus((prev) => ({ ...prev, ...statusMap }));
+          }
+          return true;
+        }
+      } catch {
+        // 일시적 네트워크 오류는 무시하고 계속 폴링한다
+      }
+    }
+    if (activeIdRef.current === conversationId) {
+      pushLocalMessage(
+        "⚠️ 처리 시간이 오래 걸리고 있습니다. 잠시 후 이 대화를 다시 열어 확인해주세요."
+      );
+    }
+    return false;
+  }
+
   async function sendMessage() {
     const text = input.trim();
     if (!text || sending) return;
     setInput("");
     setSending(true);
+
+    const isNewConversation = !activeId;
+    const priorCount = isNewConversation ? 0 : messages.length;
 
     const optimisticUser: ChatMessage = {
       id: `local-${Date.now()}`,
@@ -112,39 +164,20 @@ export function ChatApp({ userName }: { userName: string }) {
       });
       const data = await res.json();
 
-      if (!activeId && data.conversationId) {
-        setActiveId(data.conversationId);
+      if (!res.ok || data.error) {
+        pushLocalMessage(`⚠️ ${data.error ?? "요청 처리 중 오류가 발생했습니다."}`);
+        return;
+      }
+
+      const conversationId: string = data.conversationId;
+      if (isNewConversation) {
+        setActiveId(conversationId);
         loadConversations();
       }
 
-      if (data.taskId) {
-        setTaskStatus((prev) => ({ ...prev, [data.taskId]: data.status ?? "IDEA" }));
-      }
-
-      const assistantMessage: ChatMessage = {
-        id: `local-assistant-${Date.now()}`,
-        role: "assistant",
-        content: data.error
-          ? `⚠️ ${data.error}`
-          : JSON.stringify({
-              taskId: data.taskId,
-              agentsInvolved: data.agentsInvolved,
-              opinions: data.opinions,
-              finalConclusion: data.finalConclusion,
-            }),
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      await pollUntilNewMessage(conversationId, priorCount + 2);
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `local-error-${Date.now()}`,
-          role: "assistant",
-          content: "⚠️ 네트워크 오류가 발생했습니다. 다시 시도해주세요.",
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      pushLocalMessage("⚠️ 네트워크 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setSending(false);
     }
@@ -155,6 +188,9 @@ export function ChatApp({ userName }: { userName: string }) {
     decision: "APPROVED" | "HOLD" | "REVISION_REQUESTED",
     note?: string
   ) {
+    const conversationId = activeId;
+    const priorCount = messages.length;
+
     const res = await fetch(`/api/tasks/${taskId}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -162,20 +198,15 @@ export function ChatApp({ userName }: { userName: string }) {
     });
     const data = await res.json();
 
-    if (decision === "REVISION_REQUESTED" && data.finalConclusion) {
-      const assistantMessage: ChatMessage = {
-        id: `local-revision-${Date.now()}`,
-        role: "assistant",
-        content: JSON.stringify({
-          taskId: data.taskId,
-          agentsInvolved: data.agentsInvolved,
-          opinions: data.opinions,
-          finalConclusion: data.finalConclusion,
-        }),
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setTaskStatus((prev) => ({ ...prev, [taskId]: data.status ?? prev[taskId] }));
+    if (!res.ok || data.error) {
+      pushLocalMessage(`⚠️ ${data.error ?? "요청 처리 중 오류가 발생했습니다."}`);
+      return;
+    }
+
+    if (decision === "REVISION_REQUESTED") {
+      if (conversationId) {
+        await pollUntilNewMessage(conversationId, priorCount + 1);
+      }
     } else if (data.status) {
       setTaskStatus((prev) => ({ ...prev, [taskId]: data.status }));
     }

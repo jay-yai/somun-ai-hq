@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { resaveTaskWithStatus, runOrchestrator } from "@/lib/orchestrator";
+
+export const maxDuration = 300;
 
 // 섹션 24: 승인 / 수정 요청 / 보류
 export async function POST(
@@ -54,28 +56,55 @@ export async function POST(
       );
     }
     await db.task.update({ where: { id: taskId }, data: { status: "RESEARCH" } });
-    const result = await runOrchestrator({
-      userId: user.id,
-      conversationId: task.conversationId,
-      userRequest: latestVersion?.userRequest ?? task.title,
-      taskId,
-      revisionNote: note,
+
+    // 재검토도 수십 초 이상 걸릴 수 있으므로 접수만 빠르게 응답하고
+    // 실제 재실행은 응답 이후 백그라운드에서 계속한다 (/api/chat과 동일한 이유).
+    after(async () => {
+      try {
+        const result = await runOrchestrator({
+          userId: user.id,
+          conversationId: task.conversationId,
+          userRequest: latestVersion?.userRequest ?? task.title,
+          taskId,
+          revisionNote: note,
+        });
+
+        if (result.error) {
+          await db.message.create({
+            data: {
+              conversationId: task.conversationId,
+              role: "assistant",
+              content: `⚠️ ${result.error}`,
+            },
+          });
+          return;
+        }
+
+        await db.message.create({
+          data: {
+            conversationId: task.conversationId,
+            role: "assistant",
+            content: JSON.stringify({
+              taskId: result.taskId,
+              agentsInvolved: result.agentsInvolved,
+              opinions: result.opinions,
+              finalConclusion: result.finalConclusion,
+            }),
+          },
+        });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await db.message.create({
+          data: {
+            conversationId: task.conversationId,
+            role: "assistant",
+            content: `⚠️ 업무 처리 중 오류가 발생했습니다: ${errMsg}`,
+          },
+        });
+      }
     });
 
-    await db.message.create({
-      data: {
-        conversationId: task.conversationId,
-        role: "assistant",
-        content: JSON.stringify({
-          taskId: result.taskId,
-          agentsInvolved: result.agentsInvolved,
-          opinions: result.opinions,
-          finalConclusion: result.finalConclusion,
-        }),
-      },
-    });
-
-    return NextResponse.json(result);
+    return NextResponse.json({ accepted: true, status: "RESEARCH" });
   }
 
   return NextResponse.json({ error: "알 수 없는 decision 값입니다." }, { status: 400 });

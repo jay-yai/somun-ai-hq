@@ -1,7 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
 import { runOrchestrator } from "@/lib/orchestrator";
+
+// Agent 실행(특히 여러 팀 교차검토)은 수십 초~수 분이 걸릴 수 있다.
+// 하나의 HTTP 연결을 그만큼 붙잡고 있으면 중간 네트워크/브라우저가 idle
+// connection으로 판단해 끊어버릴 수 있으므로(비용은 이미 청구된 뒤),
+// 이 라우트는 접수만 빠르게 응답하고 실제 처리는 after()로 응답 이후에 계속한다.
+// 클라이언트는 /api/conversations/[id]를 폴링해서 완료를 감지한다.
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -42,58 +49,58 @@ export async function POST(req: Request) {
     data: { conversationId, role: "user", content: message },
   });
 
-  let result;
-  try {
-    result = await runOrchestrator({
-      userId: user.id,
-      conversationId,
-      userRequest: message,
-      taskId,
-      revisionNote,
-    });
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    await db.message.create({
-      data: {
-        conversationId,
-        role: "assistant",
-        content: `⚠️ 업무 처리 중 오류가 발생했습니다: ${errMsg}`,
-      },
-    });
-    return NextResponse.json(
-      { error: errMsg, conversationId },
-      { status: 500 }
-    );
-  }
+  const conversationIdForClosure = conversationId;
 
-  if (result.error) {
-    await db.message.create({
-      data: {
-        conversationId,
-        role: "assistant",
-        content: `⚠️ ${result.error}`,
-      },
-    });
-    return NextResponse.json({ ...result, conversationId }, { status: 502 });
-  }
+  // 응답을 먼저 보낸 뒤 백그라운드에서 실제 Agent 실행을 계속한다.
+  after(async () => {
+    try {
+      const result = await runOrchestrator({
+        userId: user.id,
+        conversationId: conversationIdForClosure,
+        userRequest: message,
+        taskId,
+        revisionNote,
+      });
 
-  await db.message.create({
-    data: {
-      conversationId,
-      role: "assistant",
-      content: JSON.stringify({
-        taskId: result.taskId,
-        agentsInvolved: result.agentsInvolved,
-        opinions: result.opinions,
-        finalConclusion: result.finalConclusion,
-      }),
-    },
+      if (result.error) {
+        await db.message.create({
+          data: {
+            conversationId: conversationIdForClosure,
+            role: "assistant",
+            content: `⚠️ ${result.error}`,
+          },
+        });
+        return;
+      }
+
+      await db.message.create({
+        data: {
+          conversationId: conversationIdForClosure,
+          role: "assistant",
+          content: JSON.stringify({
+            taskId: result.taskId,
+            agentsInvolved: result.agentsInvolved,
+            opinions: result.opinions,
+            finalConclusion: result.finalConclusion,
+          }),
+        },
+      });
+
+      await db.conversation.update({
+        where: { id: conversationIdForClosure },
+        data: { updatedAt: new Date() },
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await db.message.create({
+        data: {
+          conversationId: conversationIdForClosure,
+          role: "assistant",
+          content: `⚠️ 업무 처리 중 오류가 발생했습니다: ${errMsg}`,
+        },
+      });
+    }
   });
 
-  await db.conversation.update({
-    where: { id: conversationId },
-    data: { updatedAt: new Date() },
-  });
-
-  return NextResponse.json({ ...result, conversationId });
+  return NextResponse.json({ conversationId, accepted: true });
 }
