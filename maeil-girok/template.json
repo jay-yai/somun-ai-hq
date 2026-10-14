@@ -89,7 +89,7 @@
   },
   "audio": {
     "true_peak": -8.0,
-    "voice_lufs": -30.0,
+    "voice_lufs": -35.0,
     "ambient_below_db": 30
   }
 }
