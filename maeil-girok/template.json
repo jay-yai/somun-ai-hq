@@ -29,12 +29,14 @@
     "title1": {
       "top": 429,
       "bottom": 537,
-      "sample": "매일의기록 #70일차"
+      "sample": "매일의기록 #70일차",
+      "width": 1000
     },
     "title2": {
       "top": 567,
       "bottom": 666,
-      "sample": "2026. 10. 13"
+      "sample": "2026. 10. 13",
+      "width": 650
     },
     "video": {
       "y": 753,
@@ -43,7 +45,8 @@
     "subtitle": {
       "top": 1891,
       "bottom": 1976,
-      "sample": "안 된다."
+      "sample": "안 된다.",
+      "width": 290
     }
   },
   "colors": {
@@ -51,8 +54,8 @@
     "highlight": "#FDDB02"
   },
   "fonts": {
-    "title": "Pretendard-ExtraBold.otf",
-    "subtitle": "Pretendard-Medium.otf"
+    "title": "GmarketSansTTFBold.ttf",
+    "subtitle": "GmarketSansTTFMedium.ttf"
   },
   "day_rule": {
     "base_date": "2026-10-13",
@@ -60,19 +63,23 @@
   },
   "calibrated": {
     "title1": {
-      "font": "Pretendard-ExtraBold.otf",
-      "size": 144.0,
-      "y": 483.5
+      "font": "GmarketSansTTFBold.ttf",
+      "size": 144.6,
+      "y": 495.0,
+      "scale_x": 100.0
     },
     "title2": {
-      "font": "Pretendard-ExtraBold.otf",
-      "size": 165.0,
-      "y": 617.0
+      "font": "GmarketSansTTFBold.ttf",
+      "size": 134.3,
+      "y": 628.0,
+      "scale_x": 100.0
     },
     "subtitle": {
-      "font": "Pretendard-Medium.otf",
-      "size": 116.4,
-      "y": 1934.0
+      "font": "GmarketSansTTFMedium.ttf",
+      "size": 114.9,
+      "y": 1944.0,
+      "scale_x": 100.0
     }
-  }
+  },
+  "match_reference_width": false
 }

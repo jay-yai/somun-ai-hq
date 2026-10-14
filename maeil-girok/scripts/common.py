@@ -1,6 +1,7 @@
 """매일의기록 공통 도구: 템플릿 읽기, 폰트 찾기, ASS 자막 만들기, 글자 크기 맞추기."""
 import json
 import subprocess
+from datetime import date
 import tempfile
 from pathlib import Path
 
@@ -30,13 +31,26 @@ def font_path(filename):
 
 
 def font_family(filename):
-    """ASS에 적을 폰트 이름(굵기별로 구분되는 이름)."""
+    """ASS에 적을 폰트 전체 이름(예: Gmarket Sans TTF Bold). 굵기마다 이름이 달라 정확히 골라짐."""
     name = TTFont(font_path(filename))["name"]
-    return name.getDebugName(1)
+    return name.getDebugName(4)
 
 
-def fonts_dir(filename):
-    return str(font_path(filename).parent)
+def fonts_dir(filename=None):
+    if filename:
+        return str(font_path(filename).parent)
+    return str(FONT_DIRS[0])
+
+
+def day_number(t, d):
+    """날짜 → 일차. 기준일(2026-10-13 = 70일차)부터 하루에 1씩 증가."""
+    base = date.fromisoformat(t["day_rule"]["base_date"])
+    return t["day_rule"]["base_day"] + (d - base).days
+
+
+def date_text(d):
+    """날짜 → 제목 2줄 글자 "YYYY. MM. DD"."""
+    return f"{d.year}. {d.month:02d}. {d.day:02d}"
 
 
 def ass_color(hex_rgb):
@@ -46,7 +60,7 @@ def ass_color(hex_rgb):
 
 
 def ass_header(t, styles):
-    """styles: [(이름, 폰트파일, 글자크기)]"""
+    """styles: [(이름, 폰트파일, 글자크기, 가로비율%)]"""
     w, h = t["canvas"]["width"], t["canvas"]["height"]
     white = ass_color(t["colors"]["text"])
     lines = [
@@ -62,10 +76,10 @@ def ass_header(t, styles):
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
         "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
     ]
-    for name, font, size in styles:
+    for name, font, size, scale_x in styles:
         lines.append(
             f"Style: {name},{font_family(font)},{size:.1f},{white},{white},&H00000000,&H00000000,"
-            "0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
+            f"0,0,0,0,{scale_x:.1f},100,0,0,1,0,0,5,0,0,0,1"
         )
     lines += ["", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
     return "\n".join(lines) + "\n"
@@ -95,7 +109,7 @@ def render_ass_frame(ass_text, font, out_png, w=None, h=None, t=None):
     subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
          "-i", f"color=black:size={w}x{h}:duration=1",
-         "-vf", f"ass={ass_file}:fontsdir={fonts_dir(font)}", "-frames:v", "1", str(out_png)],
+         "-vf", f"ass={ass_file}:fontsdir={fonts_dir()}", "-frames:v", "1", str(out_png)],
         check=True,
     )
     Path(ass_file).unlink()
@@ -111,29 +125,45 @@ def ink_rows(png, y0=0, y1=None, threshold=128):
     return int(rows[0]) + y0, int(rows[-1]) + y0
 
 
-def fit_line(t, font, text, top, bottom, workdir):
-    """글자의 실제 높이가 top~bottom에 맞도록 글자 크기와 위치(y)를 계산."""
+def ink_width(png, threshold=128):
+    """밝은 글자 픽셀의 가로 폭."""
+    a = np.asarray(Image.open(png).convert("RGB")).max(axis=2)
+    cols = np.where((a > threshold).any(axis=0))[0]
+    return int(cols[-1] - cols[0])
+
+
+def fit_line(t, font, text, top, bottom, workdir, width=None):
+    """글자의 실제 높이가 top~bottom에 맞도록 글자 크기와 위치(y)를 계산.
+    width를 주면 글자 가로 폭도 그 값에 맞게 가로 비율(ScaleX)을 조정."""
     cx, cy = t["canvas"]["width"] / 2, t["canvas"]["height"] / 2
     png = Path(workdir) / "fit.png"
+
+    def draw(size):
+        render_ass_frame(ass_header(t, [("L", font, size, 100)]) + dialogue("L", 0, 1, cx, cy, text), font, png, t=t)
+
     size = 100.0
     for _ in range(3):
-        render_ass_frame(ass_header(t, [("L", font, size)]) + dialogue("L", 0, 1, cx, cy, text), font, png, t=t)
+        draw(size)
         top0, bot0 = ink_rows(png)
         size *= (bottom - top) / (bot0 - top0)
-    render_ass_frame(ass_header(t, [("L", font, size)]) + dialogue("L", 0, 1, cx, cy, text), font, png, t=t)
+    draw(size)
     top0, bot0 = ink_rows(png)
     y = cy + (top + bottom) / 2 - (top0 + bot0) / 2
-    return {"font": font, "size": round(size, 1), "y": round(y, 1)}
+    scale_x = 100.0 * width / ink_width(png) if width else 100.0
+    png.unlink()
+    return {"font": font, "size": round(size, 1), "y": round(y, 1), "scale_x": round(scale_x, 1)}
 
 
 def calibrate(t, workdir):
     """제목 1·2줄과 자막의 글자 크기·위치를 기준 영상에 맞춰 template에 저장."""
     L = t["layout"]
-    sample1 = title1_text(t, 70)
+    match = t.get("match_reference_width", False)
+    fonts = {"title1": t["fonts"]["title"], "title2": t["fonts"]["title"], "subtitle": t["fonts"]["subtitle"]}
+    samples = {"title1": title1_text(t, 70), "title2": L["title2"]["sample"], "subtitle": L["subtitle"]["sample"]}
     t["calibrated"] = {
-        "title1": fit_line(t, t["fonts"]["title"], sample1, L["title1"]["top"], L["title1"]["bottom"], workdir),
-        "title2": fit_line(t, t["fonts"]["title"], L["title2"]["sample"], L["title2"]["top"], L["title2"]["bottom"], workdir),
-        "subtitle": fit_line(t, t["fonts"]["subtitle"], L["subtitle"]["sample"], L["subtitle"]["top"], L["subtitle"]["bottom"], workdir),
+        k: fit_line(t, fonts[k], samples[k], L[k]["top"], L[k]["bottom"], workdir,
+                    L[k].get("width") if match else None)
+        for k in ("title1", "title2", "subtitle")
     }
     return t["calibrated"]
 

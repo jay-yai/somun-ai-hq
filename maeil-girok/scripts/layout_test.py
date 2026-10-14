@@ -7,7 +7,9 @@ import argparse
 import subprocess
 from pathlib import Path
 
-from common import ass_header, calibrate, dialogue, ink_rows, load_template, save_template, title1_text, video_filter, fonts_dir
+from datetime import date
+
+from common import ass_header, calibrate, date_text, day_number, dialogue, fonts_dir, ink_rows, load_template, save_template, title1_text, video_filter
 
 
 def main():
@@ -16,10 +18,11 @@ def main():
     ap.add_argument("outdir")
     ap.add_argument("--start", type=float, default=0)
     ap.add_argument("--dur", type=float, default=5)
-    ap.add_argument("--day", type=int, default=70)
-    ap.add_argument("--date", default="2026. 10. 13")
+    ap.add_argument("--date", default="2026-10-13", help="YYYY-MM-DD")
+    ap.add_argument("--day", type=int, help="일차 (생략하면 날짜로 자동 계산)")
     ap.add_argument("--subtitle", default="안 된다.")
     ap.add_argument("--full", action="store_true", help="1440x2560 최종 크기로 렌더링")
+    ap.add_argument("--match-width", choices=["yes", "no"], help="기준 영상 글자 폭에 맞출지 (template에 저장)")
     ap.add_argument("--reference")
     ap.add_argument("--ref-time", type=float, default=5)
     a = ap.parse_args()
@@ -27,14 +30,19 @@ def main():
     out = Path(a.outdir)
     out.mkdir(parents=True, exist_ok=True)
     t = load_template()
+    if a.match_width:
+        t["match_reference_width"] = a.match_width == "yes"
     c = calibrate(t, out)
     save_template(t)
     print("글자 크기/위치:", c)
+    d = date.fromisoformat(a.date)
+    day = a.day or day_number(t, d)
+    print(f"제목: 매일의기록 #{day}일차 / {date_text(d)}")
 
     cx = t["canvas"]["width"] / 2
-    ass = ass_header(t, [(k, v["font"], v["size"]) for k, v in c.items()])
-    ass += dialogue("title1", 0, a.dur, cx, c["title1"]["y"], title1_text(t, a.day))
-    ass += dialogue("title2", 0, a.dur, cx, c["title2"]["y"], a.date)
+    ass = ass_header(t, [(k, v["font"], v["size"], v["scale_x"]) for k, v in c.items()])
+    ass += dialogue("title1", 0, a.dur, cx, c["title1"]["y"], title1_text(t, day))
+    ass += dialogue("title2", 0, a.dur, cx, c["title2"]["y"], date_text(d))
     ass += dialogue("subtitle", 0, a.dur, cx, c["subtitle"]["y"], a.subtitle)
     ass_file = out / "layout_test.ass"
     ass_file.write_text(ass, encoding="utf-8")
@@ -43,7 +51,7 @@ def main():
     w, h = size["width"], size["height"]
     enc = t["encode"]["final" if a.full else "preview"]
     name = f"layout_test_{w}x{h}"
-    fc = video_filter(t, w, h) + f";[v]ass={ass_file}:fontsdir={fonts_dir(c['title1']['font'])},format={t['encode']['pix_fmt']}[out]"
+    fc = video_filter(t, w, h) + f";[v]ass={ass_file}:fontsdir={fonts_dir()},format={t['encode']['pix_fmt']}[out]"
     subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(a.start), "-t", str(a.dur), "-i", a.video,
          "-filter_complex", fc, "-map", "[out]", "-map", "0:a?",
