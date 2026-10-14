@@ -83,8 +83,13 @@
   },
   "match_reference_width": false,
   "voice": {
-    "pause_sentence": 0.5,
+    "pause_sentence": 0.8,
     "pause_phrase": 0.2,
     "min_silence": 0.5
+  },
+  "audio": {
+    "true_peak": -3.0,
+    "voice_lufs": null,
+    "ambient_below_db": null
   }
 }
