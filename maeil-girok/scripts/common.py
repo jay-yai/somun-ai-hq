@@ -14,6 +14,13 @@ TEMPLATE = ROOT / "template.json"
 FONT_DIRS = [ROOT / "fonts", Path.home() / ".local/share/fonts/korean"]
 
 
+def ensure_new(*paths):
+    """덮어쓰기 방지: 출력 파일이 이미 있으면 멈춤 (사용자 확인 후 지우거나 다른 이름을 쓸 것)."""
+    exists = [str(p) for p in paths if Path(p).exists()]
+    if exists:
+        raise SystemExit("이미 있는 파일이라 덮어쓰지 않고 멈춥니다: " + ", ".join(exists))
+
+
 def load_template():
     return json.loads(TEMPLATE.read_text(encoding="utf-8"))
 

@@ -10,6 +10,8 @@ import sys
 import numpy as np
 from faster_whisper import WhisperModel
 
+from common import ensure_new
+
 # "음", "어" 같은 군더더기도 받아쓰도록 유도하는 예시 문장
 FILLER_PROMPT = "음, 어, 그, 저, 아. 음… 그러니까 어… 오늘은요."
 
@@ -24,6 +26,7 @@ def load_audio(path):
 
 def main():
     src, out = sys.argv[1], sys.argv[2]
+    ensure_new(out)
     model = WhisperModel("large-v3", device="cpu", compute_type="int8", cpu_threads=4)
     segments, _ = model.transcribe(
         load_audio(src), language="ko", word_timestamps=True, beam_size=5,

@@ -14,6 +14,8 @@ import sys
 
 import numpy as np
 
+from common import ensure_new
+
 SR = 48000
 MARGIN = 0.04      # 말소리 앞뒤 여유
 FADE_IN = 0.015
@@ -33,6 +35,7 @@ def save(path, a):
 
 def main():
     src, plan_json, out_wav, map_json = sys.argv[1:5]
+    ensure_new(out_wav, map_json)
     a = load(src)
     plan = json.load(open(plan_json, encoding="utf-8"))
     kept = [c for c in plan["chunks"] if c["kind"] == "keep"]

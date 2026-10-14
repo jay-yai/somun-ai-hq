@@ -81,5 +81,10 @@
       "scale_x": 100.0
     }
   },
-  "match_reference_width": false
+  "match_reference_width": false,
+  "voice": {
+    "pause_sentence": 0.5,
+    "pause_phrase": 0.2,
+    "min_silence": 0.5
+  }
 }

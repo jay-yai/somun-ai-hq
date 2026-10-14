@@ -3,7 +3,7 @@
 - 소리 크기로 말하는 구간을 찾고(무음 0.5초 이상은 줄임)
 - Whisper 받아쓰기 단어를 각 구간에 붙여 무슨 말인지 표시
 - 군더더기(음, 어 등)와 같은 문장을 다시 녹음한 부분(중복 테이크)을 찾아 표시
-- 문장 끝 쉼은 0.3초, 문장 중간 쉼은 0.2초로 맞춤
+- 문장 끝/중간 쉼 길이는 template.json의 voice 설정을 따름
 
 사용법:
   python voice_plan.py <음성.wav> <받아쓰기.json> <계획.json>
@@ -16,12 +16,15 @@ import sys
 
 import numpy as np
 
+from common import ensure_new, load_template
+
 SR = 16000
 FRAME = 0.02            # 20ms 단위로 소리 크기 측정
 SPEECH_DB = -50         # 이보다 크면 말소리
-MIN_SILENCE = 0.5       # 이보다 긴 무음만 줄임
-PAUSE_SENTENCE = 0.3    # 문장 끝 쉼
-PAUSE_PHRASE = 0.2      # 문장 중간 쉼
+_V = load_template()["voice"]
+MIN_SILENCE = _V["min_silence"]        # 이보다 긴 무음만 줄임
+PAUSE_SENTENCE = _V["pause_sentence"]  # 문장 끝 쉼
+PAUSE_PHRASE = _V["pause_phrase"]      # 문장 중간 쉼
 FILLERS = {"음", "어", "아", "으", "그", "저", "흠", "엄", "어어", "음음"}
 RETAKE_SIMILARITY = 0.6
 
@@ -64,6 +67,7 @@ def clean(text):
 
 def main():
     wav, words_json, out = sys.argv[1:4]
+    ensure_new(out)
     a = load(wav)
     total = len(a) / SR
     segs = json.load(open(words_json, encoding="utf-8"))
