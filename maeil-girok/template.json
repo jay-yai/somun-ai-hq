@@ -1,0 +1,78 @@
+{
+  "name": "매일의기록 템플릿",
+  "canvas": {
+    "width": 1440,
+    "height": 2560,
+    "fps": 30,
+    "background": "black"
+  },
+  "preview": {
+    "width": 720,
+    "height": 1280
+  },
+  "encode": {
+    "final": {
+      "codec": "libx265",
+      "preset": "medium",
+      "crf": 20
+    },
+    "preview": {
+      "codec": "libx265",
+      "preset": "fast",
+      "crf": 26
+    },
+    "pix_fmt": "yuv420p",
+    "audio_bitrate": "192k",
+    "audio_rate": 48000
+  },
+  "layout": {
+    "title1": {
+      "top": 429,
+      "bottom": 537,
+      "sample": "매일의기록 #70일차"
+    },
+    "title2": {
+      "top": 567,
+      "bottom": 666,
+      "sample": "2026. 10. 13"
+    },
+    "video": {
+      "y": 753,
+      "height": 1053
+    },
+    "subtitle": {
+      "top": 1891,
+      "bottom": 1976,
+      "sample": "안 된다."
+    }
+  },
+  "colors": {
+    "text": "#FFFFFF",
+    "highlight": "#FDDB02"
+  },
+  "fonts": {
+    "title": "Pretendard-ExtraBold.otf",
+    "subtitle": "Pretendard-Medium.otf"
+  },
+  "day_rule": {
+    "base_date": "2026-10-13",
+    "base_day": 70
+  },
+  "calibrated": {
+    "title1": {
+      "font": "Pretendard-ExtraBold.otf",
+      "size": 144.0,
+      "y": 483.5
+    },
+    "title2": {
+      "font": "Pretendard-ExtraBold.otf",
+      "size": 165.0,
+      "y": 617.0
+    },
+    "subtitle": {
+      "font": "Pretendard-Medium.otf",
+      "size": 116.4,
+      "y": 1934.0
+    }
+  }
+}
